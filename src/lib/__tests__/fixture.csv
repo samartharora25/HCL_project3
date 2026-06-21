@@ -1,0 +1,13 @@
+ID#,Requisition No,Skill filtered,Skill Mapping,Hiring type,Req create date,Joining Date,L3 Name,Personal Sub Area,Employee Band,Lead time
+I1,DBS-/DBS-/2025/2698408,Pega,Enterprise Platforms (CRM/ERP/PLM),Internal,2025-06-24,2025-09-02,Banking,Chennai,E2,70
+I2,DBS-/DBS-/2025/2698572,Spring Boot,Programming & Full-Stack Dev,Internal,2025-06-24,2025-09-17,ING,Bengaluru,E3,85
+I3,DBS-/DBS-/2025/2698626,Functional Testing,Testing & QA,Internal,2025-06-24,2025-09-02,TLEG,Madurai,E2,70
+I4,DBS-/DBS-/2025/2698972,SAP ABAP on HANA,SAP,Internal,2025-06-24,2025-09-25,ESI-SAP,Noida,E2,93
+I5,DBS-/DBS-/2025/2699010,Azure DevOps,DevOps & SRE,External,2025-05-01,2025-08-20,MFG+Auto,Pune,E3,111
+I6,DBS-/DBS-/2025/2699044,Google Cloud Platform (GCP),Cloud & Data Engineering,External,2025-05-12,,Central,Mumbai,E4,
+I7,DBS-/DBS-/2025/2699044,Machine Learning,Data Science & AI/ML,Internal,2025-06-01,2025-07-10,INS-CMS,Hyderabad,E2,39
+I8,DBS-/DBS-/2025/2699101,,SAP,External,2025-06-15,2025-08-30,CSTNE+France,Chennai,Third Party,76
+I9,DBS-/DBS-/2025/2699150,Business Analysis,PM/BA & Agile,Contractor,2025-06-20,2025-07-15,Banking,Delhi,E1,25
+I10,DBS-/DBS-/2025/2699201,Mulesoft,Integration & API Management,Internal,2025-07-01,2025-07-28,TLEG,Bengaluru,E2,27
+,,,,,,,,,,
+,,,,,,,,,,
