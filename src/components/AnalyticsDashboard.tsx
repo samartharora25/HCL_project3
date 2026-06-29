@@ -23,17 +23,27 @@ interface ChatMessage {
   isTyping?: boolean;
 }
 
-type TabId = 'dashboard' | 'skills' | 'trends' | 'bottlenecks' | 'recs' | 'investigate' | 'agent';
+type TopTabId = 'dashboard' | 'analysis' | 'action';
+type AnalysisTabId = 'skills' | 'trends' | 'bottlenecks';
+type ActionTabId = 'recs' | 'investigate' | 'agent';
 
 // ─── NAV CONFIG ────────────────────────────────────────────────────────────────
-const TABS: { id: TabId; label: string; icon: React.ReactNode }[] = [
-  { id: 'dashboard',    label: 'Executive Dashboard', icon: <BarChart2 size={15} /> },
-  { id: 'skills',       label: 'Skill Analysis',       icon: <Layers size={15} /> },
-  { id: 'trends',       label: 'Demand Trends',         icon: <TrendingUp size={15} /> },
-  { id: 'bottlenecks',  label: 'Bottleneck Engine',     icon: <AlertTriangle size={15} /> },
-  { id: 'recs',         label: 'Recommendations',       icon: <ThumbsUp size={15} /> },
-  { id: 'investigate',  label: 'Investigation',         icon: <Search size={15} /> },
-  { id: 'agent',        label: 'AI Agent',              icon: <MessageSquare size={15} /> },
+const TOP_TABS: { id: TopTabId; label: string; icon: React.ReactNode }[] = [
+  { id: 'dashboard', label: 'Executive Dashboard', icon: <BarChart2 size={15} /> },
+  { id: 'analysis',  label: 'Analysis',             icon: <Layers size={15} /> },
+  { id: 'action',    label: 'Action',               icon: <ThumbsUp size={15} /> },
+];
+
+const ANALYSIS_TABS: { id: AnalysisTabId; label: string; icon: React.ReactNode }[] = [
+  { id: 'skills',       label: 'Skill Analysis',   icon: <Layers size={15} /> },
+  { id: 'trends',       label: 'Demand Trends',     icon: <TrendingUp size={15} /> },
+  { id: 'bottlenecks',  label: 'Bottleneck Engine', icon: <AlertTriangle size={15} /> },
+];
+
+const ACTION_TABS: { id: ActionTabId; label: string; icon: React.ReactNode }[] = [
+  { id: 'recs',         label: 'Recommendations',   icon: <ThumbsUp size={15} /> },
+  { id: 'investigate',  label: 'Investigation',     icon: <Search size={15} /> },
+  { id: 'agent',        label: 'AI Agent',          icon: <MessageSquare size={15} /> },
 ];
 
 // ─── PILL STYLE HELPER ─────────────────────────────────────────────────────────
@@ -46,13 +56,17 @@ export function AnalyticsDashboard({ parseResult }: { parseResult: ParseResult }
   const records = parseResult.validationResult.validData;
 
   // ─── States ─────────────────────────────────────────────────────────────────
-  const [activeTab, setActiveTab] = useState<TabId>('dashboard');
+  const [activeTab, setActiveTab] = useState<TopTabId>('dashboard');
+  const [activeAnalysisTab, setActiveAnalysisTab] = useState<AnalysisTabId>('skills');
+  const [activeActionTab, setActiveActionTab] = useState<ActionTabId>('recs');
   const [selectedCluster, setSelectedCluster]   = useState<string | null>(null);
   const [mixDrillCluster, setMixDrillCluster]   = useState<string | null>(null);
   const [showSummaryDetail, setShowSummaryDetail] = useState(false);
   const [trendingInfoOpen, setTrendingInfoOpen]  = useState(false);
   const [investigateTarget, setInvestigateTarget] = useState<{ type: 'skill' | 'location'; key: string } | null>(null);
   const [invMode, setInvMode] = useState<'skill' | 'location' | 'rec'>('skill');
+  const [sourceFilter, setSourceFilter] = useState<'Combined' | 'Internal' | 'External'>('Combined');
+  const [metricView, setMetricView] = useState<'both' | 'volume' | 'leadTime'>('both');
 
   // Chat
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
@@ -131,6 +145,154 @@ export function AnalyticsDashboard({ parseResult }: { parseResult: ParseResult }
     list.push({ id: 'rec-std-2', title: 'Optimize Internal Approval Workflows', category: 'Process Sourcing', description: 'Streamline executive approval steps for internal transfers. Replace manual email approvals with portal routing.', impact: 'Save 4-6 days of administrative delay', priority: 3 });
     return list.sort((a, b) => a.priority - b.priority);
   }, [clusterMetrics, locationMetrics]);
+
+  // ─── Skill Level Summary Table Calculations ──────────────────────────────
+  const getSkillLevel = (band: string | null): string => {
+    if (!band) return 'Other/Unmapped';
+    const upperBand = band.toUpperCase().trim();
+    if (upperBand.startsWith('E1')) return 'L1';
+    if (upperBand.startsWith('E2')) return 'L2';
+    if (upperBand.startsWith('E3')) return 'L3';
+    if (upperBand.startsWith('E4')) return 'L4.1';
+    if (upperBand.startsWith('E5')) return 'L4.2';
+    if (upperBand.startsWith('E6')) return 'L4.3';
+    if (upperBand.startsWith('E7')) return 'L4.4';
+    return 'Other/Unmapped';
+  };
+
+  const getMonthKey = (date: Date): string => {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    return `${y}-${m}`;
+  };
+
+  const formatMonthHeader = (key: string): string => {
+    const [year, month] = key.split('-');
+    const date = new Date(Number(year), Number(month) - 1, 1);
+    return date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+  };
+
+  const summaryMonthKeys = useMemo(() => {
+    const keys = new Set<string>();
+    records.forEach(r => {
+      if (r.raisedDate) {
+        keys.add(getMonthKey(r.raisedDate));
+      }
+    });
+    return Array.from(keys).sort(); // Chronological sort
+  }, [records]);
+
+  const summaryFilteredRecords = useMemo(() => {
+    if (sourceFilter === 'Internal') {
+      return records.filter(r => r.hiringType === 'Internal');
+    }
+    if (sourceFilter === 'External') {
+      return records.filter(r => r.hiringType === 'External');
+    }
+    return records;
+  }, [records, sourceFilter]);
+
+  const skillLevelRows = ['L1', 'L2', 'L3', 'L4.1', 'L4.2', 'L4.3', 'L4.4', 'Other/Unmapped'];
+
+  const tableData = useMemo(() => {
+    const data: Record<string, Record<string, { count: number; avgLeadTime: number | null }>> = {};
+    const rowTotals: Record<string, { count: number; avgLeadTime: number | null }> = {};
+    const colTotals: Record<string, { count: number; avgLeadTime: number | null }> = {};
+    let grandTotalCount = 0;
+    const grandLeadTimes: number[] = [];
+
+    // Initialize structures
+    skillLevelRows.forEach(level => {
+      data[level] = {};
+      summaryMonthKeys.forEach(month => {
+        data[level][month] = { count: 0, avgLeadTime: null };
+      });
+      rowTotals[level] = { count: 0, avgLeadTime: null };
+    });
+
+    summaryMonthKeys.forEach(month => {
+      colTotals[month] = { count: 0, avgLeadTime: null };
+    });
+
+    const cellLeadTimes: Record<string, Record<string, number[]>> = {};
+    const rowLeadTimes: Record<string, number[]> = {};
+    const colLeadTimes: Record<string, number[]> = {};
+
+    skillLevelRows.forEach(level => {
+      cellLeadTimes[level] = {};
+      summaryMonthKeys.forEach(month => {
+        cellLeadTimes[level][month] = [];
+      });
+      rowLeadTimes[level] = [];
+    });
+
+    summaryMonthKeys.forEach(month => {
+      colLeadTimes[month] = [];
+    });
+
+    summaryFilteredRecords.forEach(r => {
+      const level = getSkillLevel(r.band);
+      const month = r.raisedDate ? getMonthKey(r.raisedDate) : null;
+      if (!month || !skillLevelRows.includes(level)) return;
+
+      // Cell updates
+      data[level][month].count++;
+      if (r.leadTimeDays !== null) {
+        cellLeadTimes[level][month].push(r.leadTimeDays);
+      }
+
+      // Row updates
+      rowTotals[level].count++;
+      if (r.leadTimeDays !== null) {
+        rowLeadTimes[level].push(r.leadTimeDays);
+      }
+
+      // Col updates
+      colTotals[month].count++;
+      if (r.leadTimeDays !== null) {
+        colLeadTimes[month].push(r.leadTimeDays);
+      }
+
+      // Grand updates
+      grandTotalCount++;
+      if (r.leadTimeDays !== null) {
+        grandLeadTimes.push(r.leadTimeDays);
+      }
+    });
+
+    // Calculate averages
+    skillLevelRows.forEach(level => {
+      summaryMonthKeys.forEach(month => {
+        const times = cellLeadTimes[level][month];
+        data[level][month].avgLeadTime = times.length
+          ? Math.round(times.reduce((a, b) => a + b, 0) / times.length)
+          : null;
+      });
+
+      const rTimes = rowLeadTimes[level];
+      rowTotals[level].avgLeadTime = rTimes.length
+        ? Math.round(rTimes.reduce((a, b) => a + b, 0) / rTimes.length)
+        : null;
+    });
+
+    summaryMonthKeys.forEach(month => {
+      const cTimes = colLeadTimes[month];
+      colTotals[month].avgLeadTime = cTimes.length
+        ? Math.round(cTimes.reduce((a, b) => a + b, 0) / cTimes.length)
+        : null;
+    });
+
+    const grandAvgLeadTime = grandLeadTimes.length
+      ? Math.round(grandLeadTimes.reduce((a, b) => a + b, 0) / grandLeadTimes.length)
+      : null;
+
+    return {
+      cells: data,
+      rows: rowTotals,
+      cols: colTotals,
+      grand: { count: grandTotalCount, avgLeadTime: grandAvgLeadTime }
+    };
+  }, [summaryFilteredRecords, summaryMonthKeys]);
 
   // Drilldown helpers
   const getDrilldownLocationData = (cluster: string) => {
@@ -235,11 +397,19 @@ export function AnalyticsDashboard({ parseResult }: { parseResult: ParseResult }
   };
 
   // ─── Shared Tab Button Style ─────────────────────────────────────────────────
-  const tabBtn = (id: TabId): React.CSSProperties => ({
+  const tabBtn = (id: TopTabId): React.CSSProperties => ({
     padding: '10px 16px', fontWeight: 600, fontSize: '13px', border: 'none',
     background: activeTab === id ? 'var(--hcl-purple)' : 'transparent',
     color: activeTab === id ? 'white' : 'var(--hcl-neutral-400)',
     borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center',
+    gap: '6px', whiteSpace: 'nowrap', transition: 'all 0.15s',
+  });
+
+  const subTabBtn = (id: string, activeId: string): React.CSSProperties => ({
+    padding: '8px 14px', fontWeight: 600, fontSize: '12px', border: 'none',
+    background: activeId === id ? 'var(--hcl-purple-tint-10)' : 'transparent',
+    color: activeId === id ? 'var(--hcl-purple)' : 'var(--hcl-neutral-400)',
+    borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center',
     gap: '6px', whiteSpace: 'nowrap', transition: 'all 0.15s',
   });
 
@@ -249,7 +419,7 @@ export function AnalyticsDashboard({ parseResult }: { parseResult: ParseResult }
 
       {/* ── Top Navigation Bar ─────────────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: '4px', background: 'var(--hcl-neutral-100)', padding: '6px', borderRadius: '12px', flexWrap: 'wrap' }}>
-        {TABS.map(t => (
+        {TOP_TABS.map(t => (
           <button key={t.id} onClick={() => setActiveTab(t.id)} style={tabBtn(t.id)}
             onMouseEnter={e => { if (activeTab !== t.id) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(107,63,160,0.08)'; }}
             onMouseLeave={e => { if (activeTab !== t.id) (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
@@ -406,6 +576,172 @@ export function AnalyticsDashboard({ parseResult }: { parseResult: ParseResult }
             </div>
           </div>
 
+          {/* ─── Skill Level Summary Table ───────────────────────────────────── */}
+          <Card>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '16px', marginBottom: '24px' }}>
+              <div>
+                <h3 style={{ margin: 0, fontSize: '16px' }}>Fulfillment & Lead Time by Skill Level</h3>
+                <p style={{ margin: '4px 0 0', fontSize: '12px', color: 'var(--hcl-neutral-400)' }}>
+                  Monthly distribution of fulfillment volume and average lead time (days) grouped by technical skill level.
+                </p>
+              </div>
+              
+              <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
+                {/* Data Source Toggle */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--hcl-neutral-400)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Data Source</span>
+                  <div style={{ display: 'flex', background: 'var(--hcl-neutral-100)', padding: '2px', borderRadius: '8px' }}>
+                    {(['Combined', 'Internal', 'External'] as const).map(source => (
+                      <button
+                        key={source}
+                        onClick={() => setSourceFilter(source)}
+                        style={{
+                          border: 'none',
+                          background: sourceFilter === source ? 'white' : 'transparent',
+                          color: sourceFilter === source ? 'var(--hcl-purple)' : 'var(--hcl-neutral-400)',
+                          padding: '6px 12px',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          fontWeight: 600,
+                          fontSize: '12px',
+                          boxShadow: sourceFilter === source ? 'var(--shadow-sm)' : 'none',
+                          transition: 'all 0.15s'
+                        }}
+                      >
+                        {source}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Metric Toggle */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                  <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--hcl-neutral-400)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Display Metric</span>
+                  <div style={{ display: 'flex', background: 'var(--hcl-neutral-100)', padding: '2px', borderRadius: '8px' }}>
+                    {[
+                      { key: 'both', label: 'Vol / Lead Time' },
+                      { key: 'volume', label: 'Volume Only' },
+                      { key: 'leadTime', label: 'Lead Time Only' }
+                    ].map(metric => (
+                      <button
+                        key={metric.key}
+                        onClick={() => setMetricView(metric.key as any)}
+                        style={{
+                          border: 'none',
+                          background: metricView === metric.key ? 'white' : 'transparent',
+                          color: metricView === metric.key ? 'var(--hcl-purple)' : 'var(--hcl-neutral-400)',
+                          padding: '6px 12px',
+                          borderRadius: '6px',
+                          cursor: 'pointer',
+                          fontWeight: 600,
+                          fontSize: '12px',
+                          boxShadow: metricView === metric.key ? 'var(--shadow-sm)' : 'none',
+                          transition: 'all 0.15s'
+                        }}
+                      >
+                        {metric.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left' }}>
+                <thead>
+                  <tr style={{ borderBottom: '2px solid var(--hcl-neutral-200)' }}>
+                    <th style={{ padding: '12px 8px', fontWeight: 600, color: 'var(--hcl-ink)', width: '120px' }}>Skill Level</th>
+                    {summaryMonthKeys.map(month => (
+                      <th key={month} style={{ padding: '12px 8px', fontWeight: 600, color: 'var(--hcl-ink)', textAlign: 'right' }}>
+                        {formatMonthHeader(month)}
+                      </th>
+                    ))}
+                    <th style={{ padding: '12px 8px', fontWeight: 600, color: 'var(--hcl-ink)', textAlign: 'right', width: '120px' }}>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {skillLevelRows.map(level => {
+                    const rowTotal = tableData.rows[level];
+                    return (
+                      <tr
+                        key={level}
+                        style={{
+                          borderBottom: '1px solid var(--hcl-neutral-100)',
+                          transition: 'background-color 0.15s'
+                        }}
+                        onMouseEnter={e => (e.currentTarget.style.backgroundColor = 'rgba(100,60,200,0.02)')}
+                        onMouseLeave={e => (e.currentTarget.style.backgroundColor = 'transparent')}
+                      >
+                        <td style={{ padding: '12px 8px', fontWeight: 600, color: 'var(--hcl-ink)' }}>
+                          {level}
+                        </td>
+                        {summaryMonthKeys.map(month => {
+                          const cell = tableData.cells[level][month];
+                          let displayVal = '';
+                          if (metricView === 'volume') {
+                            displayVal = `${cell.count}`;
+                          } else if (metricView === 'leadTime') {
+                            displayVal = cell.avgLeadTime !== null ? `${cell.avgLeadTime}d` : '-';
+                          } else {
+                            displayVal = `${cell.count} / ${cell.avgLeadTime !== null ? `${cell.avgLeadTime}d` : '-'}`;
+                          }
+                          return (
+                            <td key={month} style={{ padding: '12px 8px', textAlign: 'right', color: cell.count > 0 ? 'var(--hcl-ink)' : 'var(--hcl-neutral-300)' }}>
+                              {displayVal}
+                            </td>
+                          );
+                        })}
+                        <td style={{ padding: '12px 8px', textAlign: 'right', fontWeight: 600, color: 'var(--hcl-purple)' }}>
+                          {metricView === 'volume' ? (
+                            `${rowTotal.count}`
+                          ) : metricView === 'leadTime' ? (
+                            rowTotal.avgLeadTime !== null ? `${rowTotal.avgLeadTime}d` : '-'
+                          ) : (
+                            `${rowTotal.count} / ${rowTotal.avgLeadTime !== null ? `${rowTotal.avgLeadTime}d` : '-'}`
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {/* Totals Row */}
+                  <tr style={{ borderTop: '2px solid var(--hcl-neutral-200)', fontWeight: 700, backgroundColor: 'var(--hcl-neutral-50)' }}>
+                    <td style={{ padding: '12px 8px', color: 'var(--hcl-ink)' }}>Total</td>
+                    {summaryMonthKeys.map(month => {
+                      const colTotal = tableData.cols[month];
+                      let displayVal = '';
+                      if (metricView === 'volume') {
+                        displayVal = `${colTotal.count}`;
+                      } else if (metricView === 'leadTime') {
+                        displayVal = colTotal.avgLeadTime !== null ? `${colTotal.avgLeadTime}d` : '-';
+                      } else {
+                        displayVal = `${colTotal.count} / ${colTotal.avgLeadTime !== null ? `${colTotal.avgLeadTime}d` : '-'}`;
+                      }
+                      return (
+                        <td key={month} style={{ padding: '12px 8px', textAlign: 'right', color: 'var(--hcl-ink)' }}>
+                          {displayVal}
+                        </td>
+                      );
+                    })}
+                    <td style={{ padding: '12px 8px', textAlign: 'right', color: 'var(--hcl-purple)' }}>
+                      {metricView === 'volume' ? (
+                        `${tableData.grand.count}`
+                      ) : metricView === 'leadTime' ? (
+                        tableData.grand.avgLeadTime !== null ? `${tableData.grand.avgLeadTime}d` : '-'
+                      ) : (
+                        `${tableData.grand.count} / ${tableData.grand.avgLeadTime !== null ? `${tableData.grand.avgLeadTime}d` : '-'}`
+                      )}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div style={{ marginTop: '16px', display: 'flex', gap: '16px', fontSize: '11px', color: 'var(--hcl-neutral-400)', borderTop: '1px solid var(--hcl-neutral-100)', paddingTop: '12px' }}>
+              <span>* <strong>Format:</strong> Volume / Avg Lead Time (days)</span>
+              <span>* Trainees and non-standard contract grades are grouped under <strong>Other/Unmapped</strong>.</span>
+            </div>
+          </Card>
+
           {/* Summary Report */}
           <Card style={{ background: 'linear-gradient(135deg, rgba(107,63,160,0.04) 0%, rgba(56,189,248,0.04) 100%)', border: '1px solid rgba(107,63,160,0.15)' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
@@ -463,8 +799,21 @@ export function AnalyticsDashboard({ parseResult }: { parseResult: ParseResult }
       {/* ════════════════════════════════════════════════════════════════════════
           TAB 2 — SKILL ANALYSIS
       ════════════════════════════════════════════════════════════════════════ */}
-      {activeTab === 'skills' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+      {activeTab === 'analysis' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <div style={{ display: 'flex', gap: '4px', background: 'var(--hcl-neutral-100)', padding: '4px', borderRadius: '8px', width: 'fit-content' }}>
+            {ANALYSIS_TABS.map(t => (
+              <button key={t.id} onClick={() => setActiveAnalysisTab(t.id)} style={subTabBtn(t.id, activeAnalysisTab)}
+                onMouseEnter={e => { if (activeAnalysisTab !== t.id) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(107,63,160,0.04)'; }}
+                onMouseLeave={e => { if (activeAnalysisTab !== t.id) (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+              >
+                {t.icon} {t.label}
+              </button>
+            ))}
+          </div>
+
+          {activeAnalysisTab === 'skills' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
 
           {/* Answer: Where do React/Node/Angular belong? */}
           <Card style={{ border: '1px solid rgba(107,63,160,0.3)', background: 'linear-gradient(135deg, rgba(107,63,160,0.04), rgba(56,189,248,0.03))' }}>
@@ -568,7 +917,7 @@ export function AnalyticsDashboard({ parseResult }: { parseResult: ParseResult }
       {/* ════════════════════════════════════════════════════════════════════════
           TAB 3 — DEMAND TRENDS
       ════════════════════════════════════════════════════════════════════════ */}
-      {activeTab === 'trends' && (
+      {activeAnalysisTab === 'trends' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
 
           {/* Header with methodology info */}
@@ -696,13 +1045,10 @@ export function AnalyticsDashboard({ parseResult }: { parseResult: ParseResult }
             </div>
           )}
         </div>
-      )}
+        )}
 
-      {/* ════════════════════════════════════════════════════════════════════════
-          TAB 4 — BOTTLENECK ENGINE
-      ════════════════════════════════════════════════════════════════════════ */}
-      {activeTab === 'bottlenecks' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+        {activeAnalysisTab === 'bottlenecks' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
           <div>
             <h2 style={{ margin: 0, fontSize: '18px' }}>Bottleneck Detection Engine</h2>
             <p style={{ margin: '4px 0 0', color: 'var(--hcl-neutral-400)', fontSize: '13px' }}>Automatically identifies fulfillment issues and classifies root causes by type</p>
@@ -830,13 +1176,25 @@ export function AnalyticsDashboard({ parseResult }: { parseResult: ParseResult }
             </Card>
           </div>
         </div>
+        )}
+      </div>
       )}
 
-      {/* ════════════════════════════════════════════════════════════════════════
-          TAB 5 — RECOMMENDATIONS
-      ════════════════════════════════════════════════════════════════════════ */}
-      {activeTab === 'recs' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+      {activeTab === 'action' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          <div style={{ display: 'flex', gap: '4px', background: 'var(--hcl-neutral-100)', padding: '4px', borderRadius: '8px', width: 'fit-content' }}>
+            {ACTION_TABS.map(t => (
+              <button key={t.id} onClick={() => setActiveActionTab(t.id)} style={subTabBtn(t.id, activeActionTab)}
+                onMouseEnter={e => { if (activeActionTab !== t.id) (e.currentTarget as HTMLButtonElement).style.background = 'rgba(107,63,160,0.04)'; }}
+                onMouseLeave={e => { if (activeActionTab !== t.id) (e.currentTarget as HTMLButtonElement).style.background = 'transparent'; }}
+              >
+                {t.icon} {t.label}
+              </button>
+            ))}
+          </div>
+
+          {activeActionTab === 'recs' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
           <div>
             <h2 style={{ margin: 0, fontSize: '18px' }}>AI-Driven Recommendation Engine</h2>
             <p style={{ margin: '4px 0 0', color: 'var(--hcl-neutral-400)', fontSize: '13px' }}>Actionable strategies dynamically generated from data anomalies and lead time analysis</p>
@@ -889,13 +1247,10 @@ export function AnalyticsDashboard({ parseResult }: { parseResult: ParseResult }
             ))}
           </div>
         </div>
-      )}
+        )}
 
-      {/* ════════════════════════════════════════════════════════════════════════
-          TAB 6 — INVESTIGATION
-      ════════════════════════════════════════════════════════════════════════ */}
-      {activeTab === 'investigate' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
+        {activeActionTab === 'investigate' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '28px' }}>
 
           {/* Navigation flow breadcrumb */}
           <Card style={{ background: 'linear-gradient(135deg,rgba(107,63,160,0.05),rgba(56,189,248,0.03))', border: '1px solid rgba(107,63,160,0.15)' }}>
@@ -1102,13 +1457,10 @@ export function AnalyticsDashboard({ parseResult }: { parseResult: ParseResult }
             </div>
           )}
         </div>
-      )}
+        )}
 
-      {/* ════════════════════════════════════════════════════════════════════════
-          TAB 7 — AI AGENT
-      ════════════════════════════════════════════════════════════════════════ */}
-      {activeTab === 'agent' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        {activeActionTab === 'agent' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div>
             <h2 style={{ margin: 0, fontSize: '18px' }}>AI Fulfillment Agent</h2>
             <p style={{ margin: '4px 0 0', color: 'var(--hcl-neutral-400)', fontSize: '13px' }}>Generate structured reports or ask questions about your dataset</p>
@@ -1170,6 +1522,8 @@ export function AnalyticsDashboard({ parseResult }: { parseResult: ParseResult }
             </form>
           </Card>
         </div>
+        )}
+      </div>
       )}
 
       {/* ════════════════════════════════════════════════════════════════════════
@@ -1232,7 +1586,7 @@ export function AnalyticsDashboard({ parseResult }: { parseResult: ParseResult }
             </div>
 
             <div style={{ padding:'16px 24px', backgroundColor:'var(--hcl-neutral-50)', display:'flex', justifyContent:'space-between', alignItems:'center', borderTop:'1px solid var(--hcl-neutral-200)' }}>
-              <button onClick={() => { setInvestigateTarget({ type: 'skill', key: selectedCluster }); setInvMode('skill'); setActiveTab('investigate'); setSelectedCluster(null); }} style={{ background:'none', border:'1px solid var(--hcl-neutral-200)', borderRadius:'8px', padding:'8px 14px', cursor:'pointer', fontSize:'12px', fontWeight:600, color:'var(--hcl-neutral-400)', display:'flex', alignItems:'center', gap:'6px' }}>
+              <button onClick={() => { setInvestigateTarget({ type: 'skill', key: selectedCluster }); setInvMode('skill'); setActiveTab('action'); setActiveActionTab('investigate'); setSelectedCluster(null); }} style={{ background:'none', border:'1px solid var(--hcl-neutral-200)', borderRadius:'8px', padding:'8px 14px', cursor:'pointer', fontSize:'12px', fontWeight:600, color:'var(--hcl-neutral-400)', display:'flex', alignItems:'center', gap:'6px' }}>
                 <Search size={12} /> Full Investigation
               </button>
               <Button onClick={() => setSelectedCluster(null)}>Close</Button>
